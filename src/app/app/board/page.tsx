@@ -294,7 +294,7 @@ export default function BoardPage() {
                       onDragEnd={handleDragEnd}
                       className="border-gray-200 hover:border-gray-300 hover:shadow-md transition-all cursor-move"
                     >
-                      <CardContent className="p-4">
+                      <CardContent className="p-4 cursor-pointer">
                         <div className="space-y-3">
                           <div>
                             <h4 className="font-medium text-gray-900 mb-1">
