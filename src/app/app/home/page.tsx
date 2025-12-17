@@ -20,7 +20,6 @@ import {
   Calendar,
   BarChart3,
 } from "lucide-react";
-import Navbar from "@/components/Navbar";
 
 export default function TaskDashboard() {
   const [tasks] = useState([
@@ -214,7 +213,7 @@ export default function TaskDashboard() {
                     Your latest work items and their progress
                   </CardDescription>
                 </div>
-                <Button size="sm">
+                <Button size="sm" className="cursor-pointer">
                   <Plus className="w-4 h-4 mr-2" />
                   New Task
                 </Button>

@@ -15,7 +15,7 @@ const Navbar = () => {
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-2">
             <LayoutDashboard className="w-6 h-6 text-blue-600" />
-            <h1 className="text-xl font-bold text-gray-900">TaskFlow</h1>
+            <h1 className="text-xl font-bold text-gray-900">Smart Task</h1>
           </div>
           <div className="flex items-center gap-2 ml-8">
             <Button variant="ghost" size="sm" className="text-gray-600">
