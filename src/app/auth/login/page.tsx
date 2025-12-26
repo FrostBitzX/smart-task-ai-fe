@@ -1,5 +1,6 @@
 "use client";
 import { supabase } from "@/lib/supabase/client";
+import { signin } from "@/services/api";
 import { useState } from "react";
 
 export default function SignInPage() {
@@ -23,6 +24,21 @@ export default function SignInPage() {
         redirectTo: `${location.origin}/auth/callback`,
       },
     });
+  };
+
+  const signIn = async () => {
+    try {
+      const res = await signin({ username: email, password });
+      if (res.status === 200) {
+        // Store token in cookie
+        const token = res.data.token;
+        document.cookie = `auth-token=${token}; path=/; max-age=86400`;
+        // Redirect to home
+        window.location.href = "/app/home";
+      }
+    } catch (error) {
+      console.error("Sign in failed:", error);
+    }
   };
 
   return (
@@ -182,7 +198,10 @@ export default function SignInPage() {
             </div>
 
             {/* Login Button */}
-            <button className="login-button w-full h-12 bg-linear-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white text-base font-semibold rounded-xl shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 transition-all duration-200 flex items-center justify-center group">
+            <button
+              onClick={signIn}
+              className="login-button w-full h-12 bg-linear-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white text-base font-semibold rounded-xl shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 transition-all duration-200 flex items-center justify-center group"
+            >
               เข้าสู่ระบบ
               <svg
                 className="w-4 h-4 ml-2 arrow-icon transition-transform"
@@ -211,7 +230,7 @@ export default function SignInPage() {
 
             {/* Social Login */}
             <div className="grid grid-cols-2 gap-3 mb-5">
-              <button className="h-10 flex items-center justify-center border-2 border-gray-200 rounded-xl hover:border-gray-300 hover:bg-gray-50 transition-all duration-200 group">
+              <button className="cursor-pointer h-10 flex items-center justify-center border-2 border-gray-200 rounded-xl hover:border-gray-300 hover:bg-gray-50 transition-all duration-200 group">
                 <svg className="w-4 h-4" viewBox="0 0 24 24">
                   <path
                     fill="#4285F4"
@@ -232,12 +251,12 @@ export default function SignInPage() {
                 </svg>
                 <span
                   onClick={signInWithGoogle}
-                  className="ml-2 text-xs font-medium text-gray-700"
+                  className="ml-2 text-xs font-medium text-gray-700 cursor-pointer"
                 >
                   Google
                 </span>
               </button>
-              <button className="h-10 flex items-center justify-center border-2 border-gray-200 rounded-xl hover:border-gray-300 hover:bg-gray-50 transition-all duration-200 group">
+              <button className="cursor-pointer h-10 flex items-center justify-center border-2 border-gray-200 rounded-xl hover:border-gray-300 hover:bg-gray-50 transition-all duration-200 group">
                 <svg className="w-4 h-4" fill="#1877F2" viewBox="0 0 24 24">
                   <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z" />
                 </svg>
