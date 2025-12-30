@@ -32,7 +32,7 @@ export default function AuthCallback() {
           id: user.id,
           email: user.email,
           username: null,
-          password: "OAUTH",
+          password: "",
           state: "active",
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
