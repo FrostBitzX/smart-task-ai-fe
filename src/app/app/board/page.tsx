@@ -165,37 +165,52 @@ export default function BoardPage() {
   // Scroll to column on mobile
   const scrollToColumn = useCallback(
     (index: number) => {
+      // ตรวจสอบว่ามี reference ของ container ที่สามารถ scroll ได้หรือไม่
       if (scrollContainerRef.current) {
         const container = scrollContainerRef.current;
+        // คำนวณความกว้างของแต่ละคอลัมน์
+        // โดยเอาความกว้างรวมที่ scroll ได้ หารด้วยจำนวนคอลัมน์ทั้งหมด
         const columnWidth = container.scrollWidth / columns.length;
+        // สั่งให้ container scroll ในแนวนอนไปยังตำแหน่งของคอลัมน์ที่ต้องการ
+        // left = ตำแหน่งคอลัมน์ (index) × ความกว้างของคอลัมน์
+        // behavior: "smooth" ทำให้เลื่อนแบบนุ่มนวล
         container.scrollTo({
           left: columnWidth * index,
           behavior: "smooth",
         });
+        // อัปเดต state เพื่อบันทึกว่าปัจจุบันอยู่ที่คอลัมน์ไหน
         setCurrentColumnIndex(index);
       }
     },
+    // useCallback จะสร้างฟังก์ชันใหม่เฉพาะตอนที่จำนวนคอลัมน์เปลี่ยน
     [columns.length]
   );
 
   // Handle scroll end to snap to nearest column
   useEffect(() => {
+    // ดึง element container ที่ใช้ scroll
     const container = scrollContainerRef.current;
     if (!container) return;
-
+    // ตัวแปร timeout ใช้หน่วงเวลา (debounce) ตรวจจับว่าเลื่อนหยุดแล้ว
     let scrollTimeout: NodeJS.Timeout;
 
     const handleScroll = () => {
+      // ถ้ามีการ scroll ต่อ ให้ยกเลิก timeout เดิม
       clearTimeout(scrollTimeout);
+      // ตั้ง timeout ใหม่ รอ 150ms หลังจากหยุด scroll
       scrollTimeout = setTimeout(() => {
+        // คำนวณความกว้างของ 1 คอลัมน์
         const columnWidth = container.scrollWidth / columns.length;
+        // ตำแหน่ง scroll ปัจจุบัน (แนวนอน)
         const scrollPosition = container.scrollLeft;
+        // หาคอลัมน์ที่ใกล้ตำแหน่ง scroll มากที่สุด
         const nearestIndex = Math.round(scrollPosition / columnWidth);
+        // ป้องกัน index เกินขอบ (0 ถึง columns.length - 1)
         const clampedIndex = Math.max(
           0,
           Math.min(nearestIndex, columns.length - 1)
         );
-
+        // ถ้าคอลัมน์ที่คำนวณได้ไม่ตรงกับ state ปัจจุบัน → อัปเดต state
         if (clampedIndex !== currentColumnIndex) {
           setCurrentColumnIndex(clampedIndex);
         }
@@ -221,18 +236,19 @@ export default function BoardPage() {
     task: any,
     columnId: string
   ) => {
+    // ดึงข้อมูลตำแหน่งนิ้วที่แตะหน้าจอครั้งแรก
     const touch = e.touches[0];
     const target = e.currentTarget as HTMLElement;
 
-    // Start long press timer for drag
+    // ตั้งเวลา long press เพื่อเริ่มโหมดลาก
     const timer = setTimeout(() => {
-      setTouchDragTask({ task, sourceColumnId: columnId });
-      setIsDragging(true);
-      setDragPosition({ x: touch.clientX, y: touch.clientY });
-      setDraggedElement(target);
+      setTouchDragTask({ task, sourceColumnId: columnId }); // เก็บข้อมูล task และคอลัมน์ต้นทาง
+      setIsDragging(true); // ตั้งค่าว่าอยู่ในสถานะกำลังลาก
+      setDragPosition({ x: touch.clientX, y: touch.clientY }); // บันทึกตำแหน่งนิ้ว เพื่อใช้คำนวณการลาก
+      setDraggedElement(target); // เก็บ element ที่ถูกลากไว้ใช้งานต่อ
       target.style.opacity = "0.5";
 
-      // Prevent scrolling while dragging
+      // ปิดการ scroll ของหน้าเว็บระหว่างลาก
       document.body.style.overflow = "hidden";
     }, 300); // 300ms long press to start drag
 
