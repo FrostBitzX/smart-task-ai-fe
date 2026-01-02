@@ -1,12 +1,20 @@
 "use client";
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+  DndContext,
+  DragOverlay,
+  closestCorners,
+  MouseSensor,
+  TouchSensor,
+  useSensor,
+  useSensors,
+  DragStartEvent,
+  DragEndEvent,
+  DragOverEvent,
+  useDraggable,
+  useDroppable,
+} from "@dnd-kit/core";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -21,10 +29,259 @@ import {
   ChevronLeft,
   ChevronRight,
 } from "lucide-react";
-import { DraggedTask } from "@/types/board";
+
+interface Task {
+  id: number;
+  title: string;
+  description: string;
+  priority: string;
+  assignees: string[];
+  dueDate: string;
+  comments: number;
+  attachments: number;
+  tags: string[];
+}
+
+interface Column {
+  id: string;
+  title: string;
+  color: string;
+  tasks: Task[];
+}
+
+// Draggable Task Card Component
+function DraggableTaskCard({
+  task,
+  columnId,
+  getPriorityColor,
+}: {
+  task: Task;
+  columnId: string;
+  getPriorityColor: (priority: string) => string;
+}) {
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
+    id: `task-${task.id}`,
+    data: { task, columnId },
+  });
+
+  // ซ่อน card จริงเมื่อกำลังลาก (ใช้ DragOverlay แทน)
+  if (isDragging) {
+    return (
+      <Card
+        ref={setNodeRef}
+        className="border-gray-200 opacity-30 border-dashed"
+      >
+        <CardContent className="p-4 invisible">
+          <div className="space-y-3">
+            <h4 className="font-medium">{task.title}</h4>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <Card
+      ref={setNodeRef}
+      {...listeners}
+      {...attributes}
+      className="border-gray-200 hover:border-gray-300 hover:shadow-md transition-all cursor-grab active:cursor-grabbing touch-manipulation"
+    >
+      <CardContent className="p-4 cursor-pointer select-none">
+        <div className="space-y-3">
+          <div>
+            <h4 className="font-medium text-gray-900 mb-1">{task.title}</h4>
+            <p className="text-xs text-gray-600 line-clamp-2">
+              {task.description}
+            </p>
+          </div>
+
+          <div className="flex flex-wrap gap-1">
+            {task.tags.map((tag, idx) => (
+              <Badge
+                key={idx}
+                variant="secondary"
+                className="text-xs px-2 py-0"
+              >
+                {tag}
+              </Badge>
+            ))}
+          </div>
+
+          <div className="flex items-center justify-between">
+            <Badge
+              variant="outline"
+              className={getPriorityColor(task.priority)}
+            >
+              {task.priority}
+            </Badge>
+            <div className="flex items-center gap-1 text-xs text-gray-500">
+              <Calendar className="w-3 h-3" />
+              {task.dueDate}
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between pt-2 border-t border-gray-100">
+            <div className="flex -space-x-2">
+              {task.assignees.map((assignee, idx) => (
+                <Avatar key={idx} className="w-6 h-6 border-2 border-white">
+                  <AvatarImage
+                    src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${assignee}`}
+                  />
+                  <AvatarFallback className="text-xs">
+                    {assignee
+                      .split(" ")
+                      .map((n) => n[0])
+                      .join("")}
+                  </AvatarFallback>
+                </Avatar>
+              ))}
+            </div>
+            <div className="flex items-center gap-3 text-gray-500">
+              {task.comments > 0 && (
+                <div className="flex items-center gap-1">
+                  <MessageSquare className="w-3.5 h-3.5" />
+                  <span className="text-xs">{task.comments}</span>
+                </div>
+              )}
+              {task.attachments > 0 && (
+                <div className="flex items-center gap-1">
+                  <Paperclip className="w-3.5 h-3.5" />
+                  <span className="text-xs">{task.attachments}</span>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+// Droppable Column Component
+function DroppableColumn({
+  column,
+  children,
+  isOver,
+}: {
+  column: Column;
+  children: React.ReactNode;
+  isOver: boolean;
+}) {
+  const { setNodeRef } = useDroppable({
+    id: column.id,
+  });
+
+  return (
+    <Card
+      ref={setNodeRef}
+      data-column-id={column.id}
+      className={`h-full transition-all ${
+        isOver ? "ring-2 ring-blue-400 ring-offset-2" : ""
+      }`}
+    >
+      <CardHeader className="pb-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className={`w-3 h-3 rounded-full ${column.color}`}></div>
+            <CardTitle className="text-base">{column.title}</CardTitle>
+            <Badge variant="secondary" className="ml-1">
+              {column.tasks.length}
+            </Badge>
+          </div>
+          <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+            <MoreHorizontal className="w-4 h-4" />
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-3">{children}</CardContent>
+    </Card>
+  );
+}
+
+// Task Card for DragOverlay (ไม่มี drag handlers)
+function TaskCardOverlay({
+  task,
+  getPriorityColor,
+}: {
+  task: Task;
+  getPriorityColor: (priority: string) => string;
+}) {
+  return (
+    <Card className="shadow-2xl border-2 border-blue-400 cursor-move w-[280px]">
+      <CardContent className="p-4 select-none">
+        <div className="space-y-3">
+          <div>
+            <h4 className="font-medium text-gray-900 mb-1">{task.title}</h4>
+            <p className="text-xs text-gray-600 line-clamp-2">
+              {task.description}
+            </p>
+          </div>
+
+          <div className="flex flex-wrap gap-1">
+            {task.tags.map((tag, idx) => (
+              <Badge
+                key={idx}
+                variant="secondary"
+                className="text-xs px-2 py-0"
+              >
+                {tag}
+              </Badge>
+            ))}
+          </div>
+
+          <div className="flex items-center justify-between">
+            <Badge
+              variant="outline"
+              className={getPriorityColor(task.priority)}
+            >
+              {task.priority}
+            </Badge>
+            <div className="flex items-center gap-1 text-xs text-gray-500">
+              <Calendar className="w-3 h-3" />
+              {task.dueDate}
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between pt-2 border-t border-gray-100">
+            <div className="flex -space-x-2">
+              {task.assignees.map((assignee, idx) => (
+                <Avatar key={idx} className="w-6 h-6 border-2 border-white">
+                  <AvatarImage
+                    src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${assignee}`}
+                  />
+                  <AvatarFallback className="text-xs">
+                    {assignee
+                      .split(" ")
+                      .map((n) => n[0])
+                      .join("")}
+                  </AvatarFallback>
+                </Avatar>
+              ))}
+            </div>
+            <div className="flex items-center gap-3 text-gray-500">
+              {task.comments > 0 && (
+                <div className="flex items-center gap-1">
+                  <MessageSquare className="w-3.5 h-3.5" />
+                  <span className="text-xs">{task.comments}</span>
+                </div>
+              )}
+              {task.attachments > 0 && (
+                <div className="flex items-center gap-1">
+                  <Paperclip className="w-3.5 h-3.5" />
+                  <span className="text-xs">{task.attachments}</span>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
 
 export default function BoardPage() {
-  const [columns, setColumns] = useState([
+  const [columns, setColumns] = useState<Column[]>([
     {
       id: "todo",
       title: "To Do",
@@ -143,79 +400,71 @@ export default function BoardPage() {
     },
   ]);
 
-  const [draggedTask, setDraggedTask] = useState<DraggedTask | null>(null);
-  const [dragOverColumn, setDragOverColumn] = useState(null);
+  const [activeTask, setActiveTask] = useState<Task | null>(null);
+  const [activeColumnId, setActiveColumnId] = useState<string | null>(null);
+  const [overColumnId, setOverColumnId] = useState<string | null>(null);
+  const [isDraggingTask, setIsDraggingTask] = useState(false);
 
   // Mobile swipe state
   const [currentColumnIndex, setCurrentColumnIndex] = useState(0);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
-  // Touch drag state for mobile
-  const [touchDragTask, setTouchDragTask] = useState<DraggedTask | null>(null);
-  const [longPressTimer, setLongPressTimer] = useState<NodeJS.Timeout | null>(
-    null
+  // Configure sensors for both mouse and touch
+  const sensors = useSensors(
+    useSensor(MouseSensor, {
+      activationConstraint: {
+        distance: 8, // 8px movement before drag starts
+      },
+    }),
+    useSensor(TouchSensor, {
+      activationConstraint: {
+        delay: 250, // 250ms long press for touch
+        tolerance: 8, // 8px movement tolerance during delay
+      },
+    })
   );
-  const [isDragging, setIsDragging] = useState(false);
-  const [dragPosition, setDragPosition] = useState({ x: 0, y: 0 });
-  const [draggedElement, setDraggedElement] = useState<HTMLElement | null>(
-    null
-  );
-  const autoScrollIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   // Scroll to column on mobile
   const scrollToColumn = useCallback(
     (index: number) => {
-      // ตรวจสอบว่ามี reference ของ container ที่สามารถ scroll ได้หรือไม่
       if (scrollContainerRef.current) {
         const container = scrollContainerRef.current;
-        // คำนวณความกว้างของแต่ละคอลัมน์
-        // โดยเอาความกว้างรวมที่ scroll ได้ หารด้วยจำนวนคอลัมน์ทั้งหมด
         const columnWidth = container.scrollWidth / columns.length;
-        // สั่งให้ container scroll ในแนวนอนไปยังตำแหน่งของคอลัมน์ที่ต้องการ
-        // left = ตำแหน่งคอลัมน์ (index) × ความกว้างของคอลัมน์
-        // behavior: "smooth" ทำให้เลื่อนแบบนุ่มนวล
         container.scrollTo({
           left: columnWidth * index,
           behavior: "smooth",
         });
-        // อัปเดต state เพื่อบันทึกว่าปัจจุบันอยู่ที่คอลัมน์ไหน
         setCurrentColumnIndex(index);
       }
     },
-    // useCallback จะสร้างฟังก์ชันใหม่เฉพาะตอนที่จำนวนคอลัมน์เปลี่ยน
     [columns.length]
   );
 
-  // Handle scroll end to snap to nearest column
+  // Handle scroll end to snap to nearest column (ปิดระหว่าง drag)
   useEffect(() => {
-    // ดึง element container ที่ใช้ scroll
     const container = scrollContainerRef.current;
     if (!container) return;
-    // ตัวแปร timeout ใช้หน่วงเวลา (debounce) ตรวจจับว่าเลื่อนหยุดแล้ว
     let scrollTimeout: NodeJS.Timeout;
 
     const handleScroll = () => {
-      // ถ้ามีการ scroll ต่อ ให้ยกเลิก timeout เดิม
+      // ไม่ snap ระหว่าง drag
+      if (isDraggingTask) return;
+
       clearTimeout(scrollTimeout);
-      // ตั้ง timeout ใหม่ รอ 150ms หลังจากหยุด scroll
       scrollTimeout = setTimeout(() => {
-        // คำนวณความกว้างของ 1 คอลัมน์
+        // เช็คอีกครั้งว่ายังไม่ได้ drag อยู่
+        if (isDraggingTask) return;
+
         const columnWidth = container.scrollWidth / columns.length;
-        // ตำแหน่ง scroll ปัจจุบัน (แนวนอน)
         const scrollPosition = container.scrollLeft;
-        // หาคอลัมน์ที่ใกล้ตำแหน่ง scroll มากที่สุด
         const nearestIndex = Math.round(scrollPosition / columnWidth);
-        // ป้องกัน index เกินขอบ (0 ถึง columns.length - 1)
         const clampedIndex = Math.max(
           0,
           Math.min(nearestIndex, columns.length - 1)
         );
-        // ถ้าคอลัมน์ที่คำนวณได้ไม่ตรงกับ state ปัจจุบัน → อัปเดต state
         if (clampedIndex !== currentColumnIndex) {
           setCurrentColumnIndex(clampedIndex);
         }
-
-        // Snap to the nearest column
         container.scrollTo({
           left: columnWidth * clampedIndex,
           behavior: "smooth",
@@ -228,141 +477,7 @@ export default function BoardPage() {
       container.removeEventListener("scroll", handleScroll);
       clearTimeout(scrollTimeout);
     };
-  }, [columns.length, currentColumnIndex]);
-
-  // Touch handlers for mobile drag and drop
-  const handleTouchStart = (
-    e: React.TouchEvent,
-    task: any,
-    columnId: string
-  ) => {
-    // ดึงข้อมูลตำแหน่งนิ้วที่แตะหน้าจอครั้งแรก
-    const touch = e.touches[0];
-    const target = e.currentTarget as HTMLElement;
-
-    // ตั้งเวลา long press เพื่อเริ่มโหมดลาก
-    const timer = setTimeout(() => {
-      setTouchDragTask({ task, sourceColumnId: columnId }); // เก็บข้อมูล task และคอลัมน์ต้นทาง
-      setIsDragging(true); // ตั้งค่าว่าอยู่ในสถานะกำลังลาก
-      setDragPosition({ x: touch.clientX, y: touch.clientY }); // บันทึกตำแหน่งนิ้ว เพื่อใช้คำนวณการลาก
-      setDraggedElement(target); // เก็บ element ที่ถูกลากไว้ใช้งานต่อ
-      target.style.opacity = "0.5";
-
-      // ปิดการ scroll ของหน้าเว็บระหว่างลาก
-      document.body.style.overflow = "hidden";
-    }, 300); // 300ms long press to start drag
-
-    setLongPressTimer(timer);
-  };
-
-  // Auto-scroll when dragging near edges
-  const startAutoScroll = useCallback(
-    (direction: "left" | "right") => {
-      if (autoScrollIntervalRef.current) return;
-
-      autoScrollIntervalRef.current = setInterval(() => {
-        const newIndex =
-          direction === "right"
-            ? Math.min(columns.length - 1, currentColumnIndex + 1)
-            : Math.max(0, currentColumnIndex - 1);
-
-        if (newIndex !== currentColumnIndex) {
-          scrollToColumn(newIndex);
-        }
-      }, 400); // Scroll every 400ms while at edge
-    },
-    [columns.length, currentColumnIndex, scrollToColumn]
-  );
-
-  const stopAutoScroll = useCallback(() => {
-    if (autoScrollIntervalRef.current) {
-      clearInterval(autoScrollIntervalRef.current);
-      autoScrollIntervalRef.current = null;
-    }
-  }, []);
-
-  const handleTouchMove = (e: React.TouchEvent) => {
-    if (longPressTimer && !isDragging) {
-      // Cancel long press if user moves before timer completes
-      clearTimeout(longPressTimer);
-      setLongPressTimer(null);
-      return;
-    }
-
-    if (!isDragging || !touchDragTask) return;
-
-    const touch = e.touches[0];
-    setDragPosition({ x: touch.clientX, y: touch.clientY });
-
-    // Auto-scroll when near screen edges
-    const screenWidth = window.innerWidth;
-    const edgeThreshold = 50; // pixels from edge to trigger scroll
-
-    if (touch.clientX > screenWidth - edgeThreshold) {
-      // Near right edge - scroll to next column
-      startAutoScroll("right");
-    } else if (touch.clientX < edgeThreshold) {
-      // Near left edge - scroll to previous column
-      startAutoScroll("left");
-    } else {
-      // Not near edge - stop auto-scroll
-      stopAutoScroll();
-    }
-
-    // Find which column we're over
-    const elements = document.elementsFromPoint(touch.clientX, touch.clientY);
-    const columnElement = elements.find((el) =>
-      el.getAttribute("data-column-id")
-    );
-    if (columnElement) {
-      const columnId = columnElement.getAttribute("data-column-id");
-      setDragOverColumn(columnId as any);
-    }
-  };
-
-  const handleTouchEnd = () => {
-    // Stop auto-scroll
-    stopAutoScroll();
-
-    if (longPressTimer) {
-      clearTimeout(longPressTimer);
-      setLongPressTimer(null);
-    }
-
-    if (isDragging && touchDragTask && dragOverColumn) {
-      const { task, sourceColumnId } = touchDragTask;
-
-      if (sourceColumnId !== dragOverColumn) {
-        setColumns((prevColumns) => {
-          return prevColumns.map((col) => {
-            if (col.id === sourceColumnId) {
-              return {
-                ...col,
-                tasks: col.tasks.filter((t) => t.id !== task.id),
-              };
-            }
-            if (col.id === dragOverColumn) {
-              return {
-                ...col,
-                tasks: [...col.tasks, task],
-              };
-            }
-            return col;
-          });
-        });
-      }
-    }
-
-    // Reset drag state
-    if (draggedElement) {
-      draggedElement.style.opacity = "1";
-    }
-    setTouchDragTask(null);
-    setIsDragging(false);
-    setDragOverColumn(null);
-    setDraggedElement(null);
-    document.body.style.overflow = "";
-  };
+  }, [columns.length, currentColumnIndex, isDraggingTask]);
 
   const getPriorityColor = (priority: string) => {
     switch (priority) {
@@ -379,89 +494,70 @@ export default function BoardPage() {
     }
   };
 
-  const handleDragStart = (e: any, task: any, columnId: any) => {
-    setDraggedTask({ task, sourceColumnId: columnId });
-    e.dataTransfer.effectAllowed = "move";
-    e.currentTarget.style.opacity = "0.5";
+  const handleDragStart = (event: DragStartEvent) => {
+    const { active } = event;
+    const taskData = active.data.current as { task: Task; columnId: string };
+    setActiveTask(taskData.task);
+    setActiveColumnId(taskData.columnId);
+    setIsDraggingTask(true);
   };
 
-  const handleDragEnd = (e: any) => {
-    e.currentTarget.style.opacity = "1";
-    setDraggedTask(null);
-    setDragOverColumn(null);
-  };
-
-  const handleDragOver = (e: any) => {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = "move";
-  };
-
-  const handleDragEnter = (columnId: any) => {
-    setDragOverColumn(columnId);
-  };
-
-  const handleDragLeave = (e: any) => {
-    if (e.currentTarget === e.target) {
-      setDragOverColumn(null);
+  const handleDragOver = (event: DragOverEvent) => {
+    const { over } = event;
+    if (over) {
+      setOverColumnId(over.id as string);
+    } else {
+      setOverColumnId(null);
     }
   };
 
-  const handleDrop = (e: any, targetColumnId: any) => {
-    e.preventDefault();
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { over } = event;
 
-    if (!draggedTask) return;
-
-    const { task, sourceColumnId }: any = draggedTask;
-
-    if (sourceColumnId === targetColumnId) {
-      setDragOverColumn(null);
+    if (!over || !activeTask || !activeColumnId) {
+      setActiveTask(null);
+      setActiveColumnId(null);
+      setOverColumnId(null);
       return;
     }
 
-    // Update columns state
-    setColumns((prevColumns) => {
-      const newColumns = prevColumns.map((col) => {
-        if (col.id === sourceColumnId) {
-          // Remove task from source column
-          return {
-            ...col,
-            tasks: col.tasks.filter((t) => t.id !== task.id),
-          };
-        }
-        if (col.id === targetColumnId) {
-          // Add task to target column
-          return {
-            ...col,
-            tasks: [...col.tasks, task],
-          };
-        }
-        return col;
-      });
-      return newColumns;
-    });
+    const targetColumnId = over.id as string;
 
-    setDragOverColumn(null);
+    if (activeColumnId !== targetColumnId) {
+      setColumns((prevColumns) => {
+        return prevColumns.map((col) => {
+          if (col.id === activeColumnId) {
+            return {
+              ...col,
+              tasks: col.tasks.filter((t) => t.id !== activeTask.id),
+            };
+          }
+          if (col.id === targetColumnId) {
+            return {
+              ...col,
+              tasks: [...col.tasks, activeTask],
+            };
+          }
+          return col;
+        });
+      });
+    }
+
+    setActiveTask(null);
+    setActiveColumnId(null);
+    setOverColumnId(null);
+    setIsDraggingTask(false);
+  };
+
+  const handleDragCancel = () => {
+    setActiveTask(null);
+    setActiveColumnId(null);
+    setOverColumnId(null);
+    setIsDraggingTask(false);
   };
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Mobile drag indicator */}
-      {isDragging && touchDragTask && (
-        <div
-          className="fixed z-50 pointer-events-none bg-white rounded-lg shadow-2xl border-2 border-blue-400 p-3 max-w-[200px]"
-          style={{
-            left: dragPosition.x - 100,
-            top: dragPosition.y - 30,
-            transform: "scale(0.9)",
-          }}
-        >
-          <p className="text-sm font-medium truncate">
-            {touchDragTask.task.title}
-          </p>
-          <p className="text-xs text-gray-500">Drop to move</p>
-        </div>
-      )}
-
       <main className="p-6 max-w-[1600px] mx-auto">
         {/* Page Header */}
         <div className="mb-6">
@@ -524,142 +620,39 @@ export default function BoardPage() {
           </Button>
         </div>
 
-        {/* Kanban Board */}
-        <div
-          ref={scrollContainerRef}
-          className="flex gap-4 overflow-x-auto pb-4 md:overflow-x-visible snap-x snap-mandatory md:snap-none scroll-smooth"
-          style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
+        {/* Kanban Board with DndContext */}
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCorners}
+          onDragStart={handleDragStart}
+          onDragOver={handleDragOver}
+          onDragEnd={handleDragEnd}
+          onDragCancel={handleDragCancel}
         >
-          {columns.map((column) => (
-            <div
-              key={column.id}
-              className="shrink-0 w-[85vw] md:w-80 snap-center md:snap-align-none"
-            >
-              <Card
-                data-column-id={column.id}
-                className={`h-full transition-all ${
-                  dragOverColumn === column.id
-                    ? "ring-2 ring-blue-400 ring-offset-2"
-                    : ""
-                }`}
-                onDragOver={handleDragOver}
-                onDragEnter={() => handleDragEnter(column.id)}
-                onDragLeave={handleDragLeave}
-                onDrop={(e) => handleDrop(e, column.id)}
+          <div
+            ref={scrollContainerRef}
+            className={`flex gap-4 overflow-x-auto pb-4 md:overflow-x-visible md:snap-none ${
+              isDraggingTask ? "" : "snap-x snap-mandatory scroll-smooth"
+            }`}
+            style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
+          >
+            {columns.map((column) => (
+              <div
+                key={column.id}
+                className="shrink-0 w-[85vw] md:w-80 snap-center md:snap-align-none"
               >
-                <CardHeader className="pb-3">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <div
-                        className={`w-3 h-3 rounded-full ${column.color}`}
-                      ></div>
-                      <CardTitle className="text-base">
-                        {column.title}
-                      </CardTitle>
-                      <Badge variant="secondary" className="ml-1">
-                        {column.tasks.length}
-                      </Badge>
-                    </div>
-                    <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-                      <MoreHorizontal className="w-4 h-4" />
-                    </Button>
-                  </div>
-                </CardHeader>
-                <CardContent className="space-y-3">
+                <DroppableColumn
+                  column={column}
+                  isOver={overColumnId === column.id}
+                >
                   {column.tasks.map((task) => (
-                    <Card
+                    <DraggableTaskCard
                       key={task.id}
-                      draggable
-                      onDragStart={(e) => handleDragStart(e, task, column.id)}
-                      onDragEnd={handleDragEnd}
-                      onTouchStart={(e) => handleTouchStart(e, task, column.id)}
-                      onTouchMove={handleTouchMove}
-                      onTouchEnd={handleTouchEnd}
-                      className={`border-gray-200 hover:border-gray-300 hover:shadow-md transition-all cursor-move touch-manipulation ${
-                        isDragging && touchDragTask?.task.id === task.id
-                          ? "opacity-50 scale-95"
-                          : ""
-                      }`}
-                    >
-                      <CardContent className="p-4 cursor-pointer select-none">
-                        <div className="space-y-3">
-                          <div>
-                            <h4 className="font-medium text-gray-900 mb-1">
-                              {task.title}
-                            </h4>
-                            <p className="text-xs text-gray-600 line-clamp-2">
-                              {task.description}
-                            </p>
-                          </div>
-
-                          <div className="flex flex-wrap gap-1">
-                            {task.tags.map((tag, idx) => (
-                              <Badge
-                                key={idx}
-                                variant="secondary"
-                                className="text-xs px-2 py-0"
-                              >
-                                {tag}
-                              </Badge>
-                            ))}
-                          </div>
-
-                          <div className="flex items-center justify-between">
-                            <Badge
-                              variant="outline"
-                              className={getPriorityColor(task.priority)}
-                            >
-                              {task.priority}
-                            </Badge>
-                            <div className="flex items-center gap-1 text-xs text-gray-500">
-                              <Calendar className="w-3 h-3" />
-                              {task.dueDate}
-                            </div>
-                          </div>
-
-                          <div className="flex items-center justify-between pt-2 border-t border-gray-100">
-                            <div className="flex -space-x-2">
-                              {task.assignees.map((assignee, idx) => (
-                                <Avatar
-                                  key={idx}
-                                  className="w-6 h-6 border-2 border-white"
-                                >
-                                  <AvatarImage
-                                    src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${assignee}`}
-                                  />
-                                  <AvatarFallback className="text-xs">
-                                    {assignee
-                                      .split(" ")
-                                      .map((n) => n[0])
-                                      .join("")}
-                                  </AvatarFallback>
-                                </Avatar>
-                              ))}
-                            </div>
-                            <div className="flex items-center gap-3 text-gray-500">
-                              {task.comments > 0 && (
-                                <div className="flex items-center gap-1">
-                                  <MessageSquare className="w-3.5 h-3.5" />
-                                  <span className="text-xs">
-                                    {task.comments}
-                                  </span>
-                                </div>
-                              )}
-                              {task.attachments > 0 && (
-                                <div className="flex items-center gap-1">
-                                  <Paperclip className="w-3.5 h-3.5" />
-                                  <span className="text-xs">
-                                    {task.attachments}
-                                  </span>
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      </CardContent>
-                    </Card>
+                      task={task}
+                      columnId={column.id}
+                      getPriorityColor={getPriorityColor}
+                    />
                   ))}
-
                   <Button
                     variant="ghost"
                     className="w-full justify-start text-gray-600 hover:text-gray-900"
@@ -667,11 +660,21 @@ export default function BoardPage() {
                     <Plus className="w-4 h-4 mr-2" />
                     Add task
                   </Button>
-                </CardContent>
-              </Card>
-            </div>
-          ))}
-        </div>
+                </DroppableColumn>
+              </div>
+            ))}
+          </div>
+
+          {/* DragOverlay - แสดง card ที่กำลังลาก */}
+          <DragOverlay>
+            {activeTask ? (
+              <TaskCardOverlay
+                task={activeTask}
+                getPriorityColor={getPriorityColor}
+              />
+            ) : null}
+          </DragOverlay>
+        </DndContext>
       </main>
     </div>
   );
